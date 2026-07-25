@@ -53,4 +53,23 @@ The GST2 format replaces the standard Godot PCK structure with:
 - Custom entry structure with 48-byte entries
 - No standard encryption flag - entire region XOR-encrypted
 
-This makes ZD.pck **simpler to decrypt** (no need to unpack executable) but **less secure** (key is embedded in file).
+| This makes ZD.pck **simpler to decrypt** (no need to unpack executable) but **less secure** (key is embedded in file). |
+
+## Remaining Files Analysis
+
+The ZD.pck contains 58 remaining .ctex files that need additional analysis. These fall into two categories:
+
+| Type | Count | Description |
+|------|-------|-------------|
+| Metadata files | ~5 | Small files with JSON metadata, already extracted |
+| Texture files | ~53 | Large files (3MB+) with GST2 header, need extraction |
+
+### Why Some Files Remain
+
+The 58 remaining .ctex files likely need analysis because:
+
+1. **They're metadata files** - Small .ctex files contain only resource metadata (path + JSON metadata), not actual texture data
+2. **Different compression format** - Some may use a different texture compression than standard WEBP/JPEG
+3. **Need PCK extraction** - These files are stored inside ZD.pck, not in the extracted_files folder
+
+To extract these files, use the `godot_unpacker.py` tool with the `-o` option to extract to a new directory.
