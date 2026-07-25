@@ -1,5 +1,0 @@
-
-s/C:\\Users\\red\\Desktop\\code\\decode/<decode_directory>/g
-s/C:\\Users\\red/<user_home>/g
-s|/c/Users/red/Desktop/code/decode|<decode_directory>|g
-s|/c/Users/red|<user_home>|g
