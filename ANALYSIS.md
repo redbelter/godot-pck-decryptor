@@ -70,6 +70,24 @@ The 58 remaining .ctex files likely need analysis because:
 
 1. **They're metadata files** - Small .ctex files contain only resource metadata (path + JSON metadata), not actual texture data
 2. **Different compression format** - Some may use a different texture compression than standard WEBP/JPEG
-3. **Need PCK extraction** - These files are stored inside ZD.pck, not in the extracted_files folder
+|3. **Need PCK extraction** - These files are stored inside ZD.pck, not in the extracted_files folder.|
+
+## .ctex Format
+
+The .ctex files follow **Godot Streamable Texture Format 2 (GST2)**:
+
+```
+[res:// path] - Godot resource path (e.g., "res://.godot/imported/image.png-hash.ctex")
+[JSON metadata] - Contains "vram_texture": false and other settings
+[Null padding] - 16+ bytes of null padding
+[GST2 header] - GST2 magic (4) + Version (4) + Width (4) + Height (4) + flags (4) + padding
+[Image data] - WEBP (VP8L) or other compressed format
+```
+
+**Key difference from metadata files:**
+- **Small .ctex files (~130-15KB)**: Just metadata descriptors - already extracted
+- **Large .ctex files (~18MB+)**: Actual texture data - embedded in ZD.pck at entry offsets
+
+The .ctex metadata files contain path/hash information pointing to the actual texture data inside ZD.pck. To extract the texture data, decrypt ZD.pck and use the file entry offsets from the GST2 header.
 
 To extract these files, use the `godot_unpacker.py` tool with the `-o` option to extract to a new directory.
