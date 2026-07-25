@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Generated files
+*.pck
+*_decrypted.pck
+extracted_*
+*.log
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large binary files (keep source, not build artifacts)
+# ZD.pck - keep the original if available, but it's large
