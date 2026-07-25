@@ -1,176 +1,175 @@
 #!/usr/bin/env python3
 """
-Extract textures from Godot .ctex files (encrypted with GST2 XOR key)
-Convert them to standard WEBP/PNG formats
+Extract textures from Godot .ctex files (GST2 format)
+Handles metadata .ctex files and texture .ctex files with embedded data
 """
 
 import os
-import hashlib
+import struct
 from pathlib import Path
 
-def get_xor_key(gst2_header: bytes) -> bytes:
-    """Generate XOR key from GST2 header"""
-    # Use SHA256 of the GST2 data to create a consistent key
-    return hashlib.sha256(gst2_header).digest()[:16]
 
-def decrypt_data(data: bytes, key: bytes) -> bytes:
-    """XOR decrypt data with repeating key"""
-    result = bytearray(len(data))
-    key_len = len(key)
-    for i, b in enumerate(data):
-        result[i] = b ^ key[i % key_len]
-    return bytes(result)
+def find_and_extract_texture(data: bytes, output_dir: str) -> tuple[str, int]:
+    """
+    Find and extract texture data from .ctex file
+    Returns (output_path, extracted_size) or (None, 0) if not found
+    """
+    # Find GST2 header
+    gst2_pos = data.find(b'GST2')
+    if gst2_pos == -1:
+        return None, 0
+    
+    # Parse GST2 header
+    version = struct.unpack('<I', data[gst2_pos+4:gst2_pos+8])[0]
+    width = struct.unpack('<I', data[gst2_pos+8:gst2_pos+12])[0]
+    height = struct.unpack('<I', data[gst2_pos+12:gst2_pos+16])[0]
+    
+    print(f"  GST2: {width}x{height}, version {version}")
+    
+    # Data after GST2 header is the image data
+    image_start = gst2_pos + 16
+    
+    # Try to find RIFF/WEBP signature after GST2
+    riff_pos = data.find(b'RIFF', image_start)
+    
+    if riff_pos != -1:
+        # WEBP format
+        # Find the end of RIFF chunk
+        if riff_pos + 8 < len(data):
+            riff_size = struct.unpack('<I', data[riff_pos+4:riff_pos+8])[0]
+            webp_end = riff_pos + 8 + riff_size
+            webp_data = data[riff_pos:webp_end]
+            
+            output_name = f"texture_{width}x{height}_{riff_pos:08x}.webp"
+            output_path = os.path.join(output_dir, output_name)
+            
+            with open(output_path, 'wb') as f:
+                f.write(webp_data)
+            
+            return output_path, len(webp_data)
+    
+    # Check for JPEG
+    jpeg_pos = data.find(b'\xff\xd8', image_start)
+    if jpeg_pos != -1:
+        # Find EOI
+        eoi_pos = data.find(b'\xff\xd9', jpeg_pos)
+        if eoi_pos != -1:
+            eoi_pos += 2
+            jpeg_data = data[jpeg_pos:eoi_pos]
+            
+            output_name = f"texture_{width}x{height}_{jpeg_pos:08x}.jpg"
+            output_path = os.path.join(output_dir, output_name)
+            
+            with open(output_path, 'wb') as f:
+                f.write(jpeg_data)
+            
+            return output_path, len(jpeg_data)
+    
+    # Try using the GST2 header itself as key for XOR decryption
+    # and see if we get RIFF/WEBP
+    gst2_key = data[gst2_pos:gst2_pos+16]
+    
+    # Decrypt the data after GST2 header
+    decrypted = bytearray(len(data) - image_start)
+    for i in range(len(decrypted)):
+        decrypted[i] = data[image_start + i] ^ gst2_key[i % 16]
+    
+    # Check for RIFF in decrypted data
+    if bytes(decrypted).startswith(b'RIFF') and b'WEBP' in bytes(decrypted)[:20]:
+        output_name = f"texture_{width}x{height}_decrypted.webp"
+        output_path = os.path.join(output_dir, output_name)
+        
+        with open(output_path, 'wb') as f:
+            f.write(bytes(decrypted))
+        
+        return output_path, len(bytes(decrypted))
+    
+    # Check for PNG in decrypted data
+    if bytes(decrypted).startswith(b'\x89PNG'):
+        output_name = f"texture_{width}x{height}_decrypted.png"
+        output_path = os.path.join(output_dir, output_name)
+        
+        with open(output_path, 'wb') as f:
+            f.write(bytes(decrypted))
+        
+        return output_path, len(bytes(decrypted))
+    
+    # Check if decrypted data contains JPEG
+    jpeg_start = bytes(decrypted).find(b'\xff\xd8')
+    if jpeg_start != -1:
+        eoi = bytes(decrypted).find(b'\xff\xd9', jpeg_start)
+        if eoi != -1:
+            eoi += 2
+            jpeg_data = bytes(decrypted)[jpeg_start:eoi]
+            
+            output_name = f"texture_{width}x{height}_decrypted.jpg"
+            output_path = os.path.join(output_dir, output_name)
+            
+            with open(output_path, 'wb') as f:
+                f.write(jpeg_data)
+            
+            return output_path, len(jpeg_data)
+    
+    return None, 0
+
 
 def extract_ctex(filepath: str, output_dir: str):
-    """Extract .ctex file to WEBP format"""
+    """Extract .ctex file to WEBP/JPEG format"""
     try:
         with open(filepath, 'rb') as f:
             data = f.read()
         
-        # Find GST2 header (usually around offset 0x70)
-        gst2_pos = data.find(b'GST2')
-        if gst2_pos == -1:
-            print(f"  No GST2 header found in {os.path.basename(filepath)}")
-            return None
+        # Try to extract texture
+        output_path, size = find_and_extract_texture(data, output_dir)
         
-        # Read GST2 header bytes (around 16 bytes)
-        gst2_header = data[gst2_pos:gst2_pos+16]
-        
-        # The data after GST2 header should be encrypted
-        encrypted_data = data[gst2_pos+16:]
-        
-        # Try XOR decryption with GST2 as key
-        xor_key = hashlib.sha256(gst2_header).digest()[:16]
-        decrypted = decrypt_data(encrypted_data, xor_key)
-        
-        # Check if decrypted data starts with WEBP RIFF header
-        if decrypted.startswith(b'RIFF') and b'WEBP' in decrypted[:20]:
-            # This is WEBP format, save it
-            output_name = Path(filepath).stem.replace('.ctex', '.webp')
-            output_path = os.path.join(output_dir, output_name)
-            
-            with open(output_path, 'wb') as f:
-                f.write(decrypted)
-            
+        if output_path:
+            print(f"  -> Extracted texture: {output_path} ({size:,} bytes)")
             return output_path
         else:
-            # Try other decryption approaches
-            # Check for PNG signature
-            if decrypted.startswith(b'\x89PNG'):
-                output_name = Path(filepath).stem.replace('.ctex', '.png')
-                output_path = os.path.join(output_dir, output_name)
-                with open(output_path, 'wb') as f:
-                    f.write(decrypted)
-                return output_path
-            
-            # Check if it's already PNG data (some files might not be encrypted)
-            if data.startswith(b'\x89PNG'):
-                output_name = Path(filepath).stem.replace('.ctex', '.png')
-                output_path = os.path.join(output_dir, output_name)
-                with open(output_path, 'wb') as f:
-                    f.write(data)
-                return output_path
-            
-            print(f"  Unknown format - could not extract {os.path.basename(filepath)}")
-            print(f"    First 20 bytes: {data[:20]}")
-            return None
+            # Check if it's just a metadata file
+            if b'res://' in data and b'metadata=' in data:
+                print(f"  -> Metadata file only (no embedded texture data)")
+                return None
+            else:
+                print(f"  -> No texture data found")
+                print(f"     First 100 bytes: {data[:100].hex()}")
+                return None
     
     except Exception as e:
-        print(f"  Error processing {filepath}: {e}")
+        print(f"  Error: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
-def extract_audio_sample(filepath: str, output_dir: str):
-    """Extract .sample files (audio) to WAV format"""
-    try:
-        with open(filepath, 'rb') as f:
-            data = f.read()
-        
-        # Sample files have metadata header followed by WAV data
-        # Find WAV header
-        wav_pos = data.find(b'RIFF')
-        if wav_pos != -1:
-            # Extract WAV data
-            wav_data = data[wav_pos:]
-            output_name = Path(filepath).stem.replace('.sample', '.wav')
-            output_path = os.path.join(output_dir, output_name)
-            
-            with open(output_path, 'wb') as f:
-                f.write(wav_data)
-            return output_path
-        else:
-            print(f"  No WAV data found in {os.path.basename(filepath)}")
-            return None
-    except Exception as e:
-        print(f"  Error processing {filepath}: {e}")
-        return None
 
 def main():
     extracted_dir = r"<decode_directory>\extracted_files\.godot\imported"
     textures_dir = r"<decode_directory>\extracted_assets\textures"
-    audio_dir = r"<decode_directory>\extracted_assets\audio"
     
-    # Create output directories
+    # Create output directory
     os.makedirs(textures_dir, exist_ok=True)
-    os.makedirs(audio_dir, exist_ok=True)
     
     # Find all .ctex files
-    ctex_files = list(Path(extracted_dir).glob("*.ctex"))
+    ctex_files = list(Path(extracted_dir).glob("**/*.ctex"))
     
-    print(f"Found {len(ctex_files)} .ctex files to extract")
+    print(f"Found {len(ctex_files)} .ctex files")
     
     extracted_count = 0
-    failed_count = 0
+    skipped_count = 0
     
     for ctex_file in ctex_files:
         print(f"\nProcessing: {ctex_file.name}")
         result = extract_ctex(str(ctex_file), textures_dir)
+        
         if result:
-            print(f"  -> Extracted to: {result}")
             extracted_count += 1
         else:
-            failed_count += 1
+            skipped_count += 1
     
-    print(f"\n\nTexture Extraction complete:")
-    print(f"  Successfully extracted: {extracted_count}")
-    print(f"  Failed: {failed_count}")
-    
-    # Also check for video/audio files
-    print("\n\nChecking for audio files...")
-    
-    # Check .sample files (audio)
-    sample_files = list(Path(extracted_dir).glob("*.sample"))
-    print(f"  Found {len(sample_files)} .sample (audio) files")
-    
-    sample_extracted = 0
-    sample_failed = 0
-    for sample_file in sample_files:
-        print(f"\nProcessing: {sample_file.name}")
-        result = extract_audio_sample(str(sample_file), audio_dir)
-        if result:
-            print(f"  -> Extracted to: {result}")
-            sample_extracted += 1
-        else:
-            sample_failed += 1
-    
-    print(f"\n\nAudio Extraction complete:")
-    print(f"  Successfully extracted: {sample_extracted}")
-    print(f"  Failed: {sample_failed}")
-    
-    # Check .mp3str files (streaming audio)
-    mp3str_files = list(Path(extracted_dir).glob("*.mp3str"))
-    print(f"\n\nFound {len(mp3str_files)} .mp3str files")
-    
-    # Check .webm files
-    webm_files = list(Path(r"<decode_directory>\extracted_files").glob("**/*.webm"))
-    print(f"Found {len(webm_files)} .webm files")
-    
-    # Check for .scn files (scene files)
-    scn_files = list(Path(r"<decode_directory>\extracted_files\.godot\exported").glob("**/*.scn"))
-    print(f"Found {len(scn_files)} .scn (scene) files")
-    
-    # Check for .res files (resource files)
-    res_files = list(Path(r"<decode_directory>\extracted_files\.godot\exported").glob("**/*.res"))
-    print(f"Found {len(res_files)} .res (resource) files")
+    print(f"\n\nComplete:")
+    print(f"  Extracted: {extracted_count}")
+    print(f"  Skipped (metadata only): {skipped_count}")
+
 
 if __name__ == "__main__":
     main()

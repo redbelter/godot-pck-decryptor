@@ -79,6 +79,39 @@ The .ctex files follow **Godot Streamable Texture Format 2 (GST2)**:
 ```
 [res:// path] - Godot resource path (e.g., "res://.godot/imported/image.png-hash.ctex")
 [JSON metadata] - Contains "vram_texture": false and other settings
+[Null padding]
+[GST2 header] - GST2 magic (4) + Version (4) + Width (4) + Height (4) + flags (4) + padding
+[Image data] - WEBP (VP8L) or other compressed format
+```
+
+### ZD.pck Structure
+
+1. **GDPC Header (0x0)** - GDPC magic, version, file count
+2. **GDPC Entries (0x50)** - References to file sections (encrypted with GST2 key)
+3. **GST2 Header (0x70)** - Contains 16-byte XOR key, version, entry count, data offset
+4. **File Entries (0x80+)** - Encrypted file entry data
+5. **File Data (0x2d0+)** - Encrypted file content with GST2 XOR
+
+### Extraction Method
+
+The .ctex files in `extracted_files/.godot/imported/` are **metadata files** containing:
+- The path/hash identifier
+- JSON metadata (`"vram_texture": false`)
+- GST2 header with embedded texture data
+
+The actual texture data is stored inside ZD.pck at the offsets specified by the GST2 file entries. To extract:
+1. Decrypt ZD.pck using GST2 XOR key
+2. Parse the decrypted file entries at 0x80
+3. Extract texture data from the specified offsets
+4. Look for RIFF/WEBP or JPEG markers in the extracted data
+
+## .ctex Format
+
+The .ctex files follow **Godot Streamable Texture Format 2 (GST2)**:
+
+```
+[res:// path] - Godot resource path (e.g., "res://.godot/imported/image.png-hash.ctex")
+[JSON metadata] - Contains "vram_texture": false and other settings
 [Null padding] - 16+ bytes of null padding
 [GST2 header] - GST2 magic (4) + Version (4) + Width (4) + Height (4) + flags (4) + padding
 [Image data] - WEBP (VP8L) or other compressed format
