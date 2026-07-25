@@ -1,4 +1,13 @@
-# ZD.pck Format Analysis
+|# ZD.pck Format Analysis
+
+## File Information
+
+| File | Size | Version |
+|------|------|---------|
+| ZD.exe | 104.5 MB (104,521,728 bytes) | Windows PE32+ x86-64 (MPRESS packed) |
+| ZD.pck | 1,380 MB (1,447,035,884 bytes) | GDPC v3 + GST2 |
+
+**Total extracted assets:** 567 files (WEBP: 410, JPEG: 111, MP3: 46)
 
 ## Format Overview
 
