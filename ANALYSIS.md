@@ -1,54 +1,47 @@
-# ZD.pck Extraction Analysis
+# ZD.pck Format Analysis
 
-## Summary
-The `ZD.pck` file uses **GDPC format** (Godot PCK with swapped header: GDPC instead of GDCP) and contains **encrypted content**.
+## Format Overview
 
-## Evidence
+ZD.pck uses a **custom GDPC format** with **GST2 XOR encryption**. It differs from standard Godot PCK in the following ways:
 
-### 1. File Header Analysis
-- Magic bytes: `47 44 50 43` = "GDPC" 
-- Standard Godot uses: `47 44 43 50` = "GDCP"
-- The C/P swap indicates a custom/modified format
+| Aspect | Standard Godot | ZD.pck (GST2) |
+|--------|----------------|-----------------|
+| **Header structure** | 64-byte padding | GST2 header at 0x70 |
+| **GST2 header** | None | Present at offset 0x70 |
+| **Encryption** | Optional AES-256-CFB | GST2 XOR (16-byte key) |
+| **Key location** | In executable template | Embedded in PCK (GST2 header) |
 
-### 2. Content Structure
-- First readable string (`res://`) found at offset **3,686,551** (after ~3.7MB)
-- Gap between header and first file path contains non-null bytes → ENCRYPTED DATA
-- No embedded ZIP signatures found
+## GST2 Format Structure
 
-### 3. GDPC Validation Code
-- ZD.exe contains `memcmp` with "GDPC" string at offset `0x29b130e`
-- The code validates the PCK header before processing
-- Godot's built-in loader handles GDPC format natively
-
-### 4. PE Section Analysis
-- No embedded .pck resource section in ZD.exe
-- All sections are standard code/data sections
-- No encryption keys found in static analysis
-
-## Extraction Requirements
-To extract encrypted PCK content, you need:
-
-1. **Export Preset File** (`export_presets.cfg`) - Contains the encryption key
-2. OR **Reverse-engineer the decryption algorithm** from ZD.exe (complex)
-
-## Next Steps
-
-### Option A: Find export_presets.cfg
-Look for these files in the original game folder:
-- `export_presets.cfg` (Godot project settings)
-- `project.godot` (project configuration)
-
-These might be embedded in a backup, installer, or development folder.
-
-### Option B: Use Godot CLI to extract
-If you can install Godot engine:
-```bash
-godot --check-only path/to/ZD.pck
+```
+Offset 0x0:   GDPC magic (0x47445043)
+Offset 0x4:   Version (4 bytes)
+Offset 0x8:   Unknown1 (4 bytes)
+Offset 0xC:   Unknown2 = 0x06 (ZD format marker)
+Offset 0x10:  File count (4 bytes)
+Offset 0x18:  Section offset = 0x70
+Offset 0x70:  GST2 header (16 bytes) - XOR key
+  - "GST2" magic (4 bytes)
+  - Version (4 bytes)
+  - Entry count (4 bytes)
+  - Data offset (4 bytes)
+Offset 0x80:  File entries (encrypted with GST2 XOR)
+Offset 0x2d0: Encrypted content
 ```
 
-Godot 4.x has built-in PCK handling that may work with GDPC format.
+## Extraction Process
 
-## Current Status
-**PCK IS ENCRYPTED - Cannot extract without encryption key.**
+1. **Read GST2 key** from offset 0x70 (16 bytes)
+2. **Decrypt data** starting at offset 0x80 using XOR with GST2 key
+3. **Parse decrypted entries** to find file paths and offsets
+4. **Extract file data** from decrypted content
 
-The game loads the file because ZD.exe contains Godot's engine which knows how to decrypt it using the build-time configuration.
+## Key Differences from Standard Godot
+
+The GST2 format replaces the standard Godot PCK structure with:
+- GST2 header embedded in PCK (no external key needed)
+- 16-byte XOR key instead of 32-byte AES key
+- Custom entry structure with 48-byte entries
+- No standard encryption flag - entire region XOR-encrypted
+
+This makes ZD.pck **simpler to decrypt** (no need to unpack executable) but **less secure** (key is embedded in file).
