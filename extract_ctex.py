@@ -6,6 +6,7 @@ Handles metadata .ctex files and texture .ctex files with embedded data
 
 import os
 import struct
+import sys
 from pathlib import Path
 
 
@@ -143,32 +144,45 @@ def extract_ctex(filepath: str, output_dir: str):
 
 
 def main():
-    extracted_dir = r"<decode_directory>\extracted_files\.godot\imported"
-    textures_dir = r"<decode_directory>\extracted_assets\textures"
+    # Parse command line arguments
+    if len(sys.argv) < 2:
+        print("Usage: python extract_ctex.py <ctex_file_or_directory> [output_dir]")
+        sys.exit(1)
+    
+    input_path = sys.argv[1]
+    output_dir = sys.argv[2] if len(sys.argv) > 2 else "extracted_textures"
     
     # Create output directory
-    os.makedirs(textures_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
     
-    # Find all .ctex files
-    ctex_files = list(Path(extracted_dir).glob("**/*.ctex"))
+    input_path = Path(input_path)
     
-    print(f"Found {len(ctex_files)} .ctex files")
-    
-    extracted_count = 0
-    skipped_count = 0
-    
-    for ctex_file in ctex_files:
-        print(f"\nProcessing: {ctex_file.name}")
-        result = extract_ctex(str(ctex_file), textures_dir)
-        
+    if input_path.is_file():
+        # Process single file
+        print(f"Processing: {input_path.name}")
+        result = extract_ctex(str(input_path), output_dir)
         if result:
-            extracted_count += 1
+            print(f"\nExtracted: {result}")
         else:
-            skipped_count += 1
-    
-    print(f"\n\nComplete:")
-    print(f"  Extracted: {extracted_count}")
-    print(f"  Skipped (metadata only): {skipped_count}")
+            print("\nNo texture extracted")
+    else:
+        # Process all .ctex files in directory
+        ctex_files = list(input_path.glob("**/*.ctex"))
+        print(f"Found {len(ctex_files)} .ctex files\n")
+        
+        extracted_count = 0
+        skipped_count = 0
+        
+        for ctex_file in ctex_files:
+            result = extract_ctex(str(ctex_file), output_dir)
+            if result:
+                extracted_count += 1
+            else:
+                skipped_count += 1
+        
+        print(f"\nComplete:")
+        print(f"  Extracted: {extracted_count}")
+        print(f"  Skipped (metadata only): {skipped_count}")
 
 
 if __name__ == "__main__":
